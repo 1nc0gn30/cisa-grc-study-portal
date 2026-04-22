@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@keyframes buttonPulseGlow {
+  0% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.22), 0 0 0 rgba(16, 185, 129, 0);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.01);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.08), 0 0 22px rgba(16, 185, 129, 0.35);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.18), 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes buttonPulseGlowStrong {
+  0% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.26), 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 0 0 7px rgba(245, 158, 11, 0.08), 0 0 24px rgba(245, 158, 11, 0.4);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.2), 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+button:not(.button-ack):not(:disabled) {
+  animation: buttonPulseGlow 1.9s ease-in-out infinite;
+}
+
+button.attention-btn-strong:not(:disabled):not(.button-ack) {
+  animation: buttonPulseGlowStrong 1.35s ease-in-out infinite;
+}
+
+button.button-ack {
+  animation: none !important;
+  box-shadow: none !important;
+}
+
+/* Light mode overrides for existing dark-first utility classes */
+.theme-light {
+  background-color: #f5f8ff !important;
+  color: #0f172a !important;
+}
+
+.theme-light .bg-slate-950,
+.theme-light .bg-slate-900,
+.theme-light .bg-slate-900\/80,
+.theme-light .bg-slate-900\/70,
+.theme-light .bg-slate-900\/60,
+.theme-light .bg-slate-800,
+.theme-light .bg-slate-800\/80,
+.theme-light .bg-slate-800\/70,
+.theme-light .bg-slate-800\/60 {
+  background-color: #ffffff !important;
+}
+
+.theme-light .border-slate-800,
+.theme-light .border-slate-700 {
+  border-color: #dbe4f3 !important;
+}
+
+.theme-light .text-white,
+.theme-light .text-slate-100,
+.theme-light .text-slate-200 {
+  color: #0f172a !important;
+}
+
+.theme-light .text-slate-300,
+.theme-light .text-slate-400 {
+  color: #334155 !important;
+}
+
+.theme-light .text-slate-500 {
+  color: #64748b !important;
+}
+
+.theme-light .hover\:bg-slate-800:hover,
+.theme-light .hover\:bg-slate-700:hover {
+  background-color: #eef3fb !important;
+}
+
+.theme-light .bg-emerald-500\/20 {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+}
+
+.theme-light .bg-emerald-500\/15 {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+}

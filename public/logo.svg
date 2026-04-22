@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" role="img" aria-label="CISA GRC Study Portal logo">
+  <rect width="720" height="180" rx="20" fill="#05251f"/>
+  <path d="M95 24L164 50V102C164 130 136 152 95 165C54 152 26 130 26 102V50Z" fill="#0f6a55" stroke="#7ff2ca" stroke-width="4"/>
+  <path d="M95 58V132M58 96H132" stroke="#d5fff0" stroke-width="5"/>
+  <text x="200" y="86" fill="#eafff7" font-size="42" font-family="Inter, Arial, sans-serif" font-weight="700">CISA GRC Study Portal</text>
+  <text x="200" y="124" fill="#b8e7d9" font-size="22" font-family="Inter, Arial, sans-serif">Governance. Risk. Compliance mastery.</text>
+</svg>

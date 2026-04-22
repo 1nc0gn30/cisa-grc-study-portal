@@ -1,0 +1,6 @@
+{
+  "name": "CISA GRC Study Portal",
+  "description": "A specialized study tool for GRC leaders and Deputy CISOs mastering the ISACA CISA domains. Includes flashcards, a practice quiz, and a risk matrix tool.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

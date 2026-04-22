@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="CISA GRC Study Portal open graph image">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#052e2b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.2" cy="0.2" r="0.9">
+      <stop offset="0%" stop-color="#6ee7b7" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#6ee7b7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#050913"/>
+  <rect width="1200" height="630" fill="url(#bg)" opacity="0.26"/>
+  <circle cx="260" cy="180" r="260" fill="url(#glow)"/>
+  <rect x="58" y="58" width="1084" height="514" rx="34" fill="#070d1b" opacity="0.68" stroke="#9cb4e4" stroke-opacity="0.22"/>
+  <text x="120" y="255" fill="#e9f0ff" font-size="74" font-family="Inter, Segoe UI, Arial, sans-serif" font-weight="800">CISA GRC Study Portal</text>
+  <text x="120" y="328" fill="#b9c9e8" font-size="34" font-family="Inter, Segoe UI, Arial, sans-serif">Exam-focused governance training</text>
+  <text x="120" y="520" fill="#8ca0c8" font-size="24" font-family="Inter, Segoe UI, Arial, sans-serif">by Neal Frazier</text>
+  <path d="M860 130L1030 190V320C1030 390 960 460 860 500C760 460 690 390 690 320V190Z" fill="#0a1224" opacity="0.85" stroke="#8ef7bc" stroke-width="4"/><path d="M860 200V410" stroke="#8ef7bc" stroke-width="6"/><path d="M770 305H950" stroke="#8ef7bc" stroke-width="6"/><circle cx="860" cy="305" r="78" fill="none" stroke="#9ad7ff" stroke-width="3" stroke-dasharray="10 8"/>
+</svg>

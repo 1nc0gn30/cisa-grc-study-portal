@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
-  AlertTriangle,
   Award,
   BarChart3,
   Bot,
@@ -9,19 +8,29 @@ import {
   BookOpen,
   BrainCircuit,
   CalendarClock,
+  Check,
   CheckCircle,
   CheckSquare,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Clock,
+  Coffee,
+  Copy,
+  Download,
+  ExternalLink,
+  FileText,
   Filter,
+  Flag,
+  Keyboard,
   LayoutDashboard,
   Lock,
   Menu,
   MessageSquare,
   Moon,
+  Printer,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   ShieldCheck,
@@ -29,22 +38,34 @@ import {
   Sun,
   Target,
   TrendingUp,
-  XCircle,
+  Upload,
   XSquare,
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import {
+  DOMAINS,
+  buildWeakAreaMarkdown,
+  buildWeightedExamSet,
+  calculateResidualRisk,
+  computeDomainStats,
+  computeReadinessIndex,
+  createEmptyProgress,
+  domainById,
+  estimateCisaScaledScore,
+  formatTime,
+  getWeakDomainIds,
+  loadStudyProgress,
+  parseStudyProgress,
+  saveStudyProgress,
+  type DomainStat,
+  type ExamFocusFilter,
+  type QuizAttempt,
+  type QuizQuestion,
+} from './lib/cisaEngine';
 
-type Domain = {
-  id: number;
-  title: string;
-  weight: number;
-  description: string;
-  topics: string[];
-  examFocus: string;
-  commonTrap: string;
-  memoryAnchor: string;
-};
+const STRIPE_COFFEE_URL = 'https://buy.stripe.com/3cIfZg27PdKo2D64Ocfw40X';
+const SOLANA_TIP_ADDRESS = 'GG2eQbVh8ut1BK6j1A2tz7pSySdLpD38BgyEhGcxdXoK';
 
 type GlossaryCategory = {
   category: string;
@@ -56,23 +77,6 @@ type Flashcard = {
   domain: number;
   front: string;
   back: string;
-};
-
-type QuizQuestion = {
-  id: number;
-  domain: number;
-  question: string;
-  options: string[];
-  answer: number;
-  explanation: string;
-};
-
-type QuizAttempt = {
-  score: number;
-  total: number;
-  durationSeconds: number;
-  completedAt: string;
-  perDomain: Record<number, { correct: number; total: number }>;
 };
 
 type StudyDay = {
@@ -94,74 +98,6 @@ type DomainLearningPack = {
 type ThemeMode = 'dark' | 'light';
 type ChatProvider = 'openai' | 'gemini' | 'ollama';
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
-
-const DOMAINS: Domain[] = [
-  {
-    id: 1,
-    title: 'Information System Auditing Process',
-    weight: 21,
-    description:
-      'Plan, execute, and report IS audits using risk-based methods and evidence quality standards.',
-    topics: ['Audit charter', 'Risk-based planning', 'Audit evidence', 'Sampling', 'Follow-up'],
-    examFocus:
-      'Prioritize audit independence, scope clarity, and evidence reliability when options are close.',
-    commonTrap:
-      'Choosing a technically detailed answer instead of the one that preserves auditor independence.',
-    memoryAnchor: 'Authority first, evidence second, detail third.',
-  },
-  {
-    id: 2,
-    title: 'Governance and Management of IT',
-    weight: 17,
-    description:
-      'Evaluate leadership, structures, and controls that align IT with business outcomes and risk appetite.',
-    topics: ['COBIT governance', 'IT strategy', 'RACI', 'Three lines model', 'Performance metrics'],
-    examFocus:
-      'Map every governance choice to accountability and business ownership of risk.',
-    commonTrap:
-      'Assigning IT or audit as risk owner instead of business process owners.',
-    memoryAnchor: 'Business owns risk; IT enables; audit assures.',
-  },
-  {
-    id: 3,
-    title: 'IS Acquisition, Development and Implementation',
-    weight: 12,
-    description:
-      'Assure controls are designed and tested across project delivery from requirements to post-implementation.',
-    topics: ['Business case', 'SDLC controls', 'Project governance', 'Testing strategy', 'PIR'],
-    examFocus:
-      'Security and controls should appear at requirements and design, not only testing.',
-    commonTrap:
-      'Selecting late-stage testing as the best point to add key controls.',
-    memoryAnchor: 'Shift-left controls beat patch-later controls.',
-  },
-  {
-    id: 4,
-    title: 'IS Operations and Business Resilience',
-    weight: 23,
-    description:
-      'Assess operational controls, support processes, and continuity capabilities that sustain service delivery.',
-    topics: ['Incident/problem mgmt', 'Capacity and change', 'BIA', 'RTO/RPO/WRT/MTD', 'DR testing'],
-    examFocus:
-      'In continuity questions, quantify what the business can tolerate before selecting technology.',
-    commonTrap:
-      'Picking the fastest recovery technology without validating business tolerance metrics.',
-    memoryAnchor: 'BIA defines tolerance; DR design follows tolerance.',
-  },
-  {
-    id: 5,
-    title: 'Protection of Information Assets',
-    weight: 27,
-    description:
-      'Evaluate design and operation of security controls across identity, data, network, and cryptographic protection.',
-    topics: ['IAM models', 'Network controls', 'Crypto and PKI', 'Data classification', 'Physical security'],
-    examFocus:
-      'Favor least privilege, segmentation, and layered controls tied to CIA impact.',
-    commonTrap:
-      'Choosing a strong standalone control over the control that best matches risk context.',
-    memoryAnchor: 'Classify data, control access, verify integrity, prove recovery.',
-  },
-];
 
 const GLOSSARY: GlossaryCategory[] = [
   {
@@ -715,50 +651,13 @@ const DOMAIN_LEARNING_PACKS: Record<number, DomainLearningPack> = {
   },
 };
 
-function domainById(id: number) {
-  return DOMAINS.find((d) => d.id === id) ?? DOMAINS[0];
-}
-
-function formatTime(seconds: number) {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function shuffleArray<T>(items: T[]): T[] {
-  const clone = [...items];
-  for (let i = clone.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const temp = clone[i];
-    clone[i] = clone[j];
-    clone[j] = temp;
-  }
-  return clone;
-}
-
-function shuffleQuestionOptions(question: QuizQuestion): QuizQuestion {
-  const indexedOptions = question.options.map((option, index) => ({ option, index }));
-  const shuffled = shuffleArray(indexedOptions);
-  const newAnswer = shuffled.findIndex((item) => item.index === question.answer);
-  return {
-    ...question,
-    options: shuffled.map((item) => item.option),
-    answer: newAnswer,
-  };
-}
-
-function buildExamSet(questionCount: number): QuizQuestion[] {
-  return shuffleArray(QUESTION_BANK)
-    .slice(0, Math.min(questionCount, QUESTION_BANK.length))
-    .map((question) => shuffleQuestionOptions(question));
-}
-
 function Sidebar({
   activeTab,
   setActiveTab,
   isMobileOpen,
   setIsMobileOpen,
   readinessScore,
+  scaledScore,
   theme,
   toggleTheme,
 }: {
@@ -767,6 +666,7 @@ function Sidebar({
   isMobileOpen: boolean;
   setIsMobileOpen: (open: boolean) => void;
   readinessScore: number;
+  scaledScore: number | null;
   theme: ThemeMode;
   toggleTheme: () => void;
 }) {
@@ -781,34 +681,34 @@ function Sidebar({
   ];
 
   const sidebarContent = (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-300 border-r border-slate-800 w-[85vw] max-w-72">
-      <div className="p-6 flex items-center gap-3 text-white border-b border-slate-800">
+    <aside className="h-full flex flex-col bg-slate-950 text-slate-300 border-r border-slate-800 w-[85vw] max-w-72">
+      <div className="p-5 flex items-center gap-3 text-white border-b border-slate-800">
         <button
           onClick={() => {
             setActiveTab('dashboard');
             setIsMobileOpen(false);
           }}
-          className="flex items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70"
+          className="flex items-center gap-3 text-left rounded-lg min-h-[44px]"
           aria-label="Go to home dashboard"
         >
-          <div className="bg-emerald-500 p-2 rounded-lg">
-            <ShieldCheck className="w-6 h-6 text-slate-900" />
+          <div className="bg-emerald-500 p-2 rounded-lg shrink-0">
+            <ShieldCheck className="w-6 h-6 text-slate-950" aria-hidden="true" />
           </div>
           <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-400">Open-Access Lab</p>
             <h1 className="font-bold text-lg leading-tight">CISA Pass Lab</h1>
-            <p className="text-xs text-slate-400">Exam-focused GRC training</p>
           </div>
         </button>
         <button
           onClick={toggleTheme}
-          className="ml-auto p-2 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
-          aria-label="Toggle theme"
+          className="ml-auto min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 transition-colors"
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
         >
-          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {theme === 'dark' ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
         </button>
       </div>
 
-      <nav className="flex-1 py-6 px-3 space-y-1">
+      <nav className="flex-1 py-5 px-3 space-y-1 overflow-y-auto" aria-label="Study workspace sections">
         {navItems.map((item) => (
           <button
             key={item.id}
@@ -816,27 +716,34 @@ function Sidebar({
               setActiveTab(item.id);
               setIsMobileOpen(false);
             }}
-            className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 ${
-              activeTab === item.id ? 'bg-emerald-500/15 text-emerald-300 font-medium' : 'hover:bg-slate-800 hover:text-white'
+            aria-current={activeTab === item.id ? 'page' : undefined}
+            className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
+              activeTab === item.id
+                ? 'bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30'
+                : 'text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent'
             }`}
           >
-            {item.icon}
-            {item.label}
-            {activeTab === item.id && <ChevronRight className="w-4 h-4 ml-auto" />}
+            <span aria-hidden="true">{item.icon}</span>
+            <span>{item.label}</span>
+            {activeTab === item.id && <ChevronRight className="w-4 h-4 ml-auto" aria-hidden="true" />}
           </button>
         ))}
       </nav>
 
-      <div className="p-6 border-t border-slate-800">
-        <div className="bg-slate-900 rounded-xl p-4 text-center border border-slate-800">
-          <p className="text-xs text-slate-400 mb-2">Readiness Index</p>
-          <div className="text-3xl font-bold text-white">{readinessScore}%</div>
-          <div className="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+      <div className="p-5 border-t border-slate-800">
+        <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+          <div className="flex items-center justify-between text-xs font-mono uppercase tracking-wider text-slate-400">
+            <span>Readiness</span>
+            <span className="text-emerald-300">{scaledScore !== null ? `Est. ${scaledScore}/800` : 'Uncalibrated'}</span>
+          </div>
+          <div className="text-3xl font-bold text-white mt-1">{readinessScore}%</div>
+          <div className="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden" role="progressbar" aria-valuenow={readinessScore} aria-valuemin={0} aria-valuemax={100} aria-label="Overall exam readiness">
             <div className="bg-emerald-500 h-full rounded-full transition-all" style={{ width: `${readinessScore}%` }} />
           </div>
+          <p className="text-[11px] text-slate-500 mt-2">Saved locally in browser</p>
         </div>
       </div>
-    </div>
+    </aside>
   );
 
   return (
@@ -857,7 +764,7 @@ function Sidebar({
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
-              transition={{ type: 'spring', bounce: 0, duration: 0.35 }}
+              transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
               className="fixed inset-y-0 left-0 z-50 md:hidden w-[85vw] max-w-72"
             >
               {sidebarContent}
@@ -871,82 +778,248 @@ function Sidebar({
 
 function Dashboard({
   setActiveTab,
+  onStartDomainDrill,
   readinessScore,
   masteredCount,
+  completedDaysCount,
   averageQuiz,
-  attempts,
-  focusDomains,
+  attemptsCount,
+  domainStats,
+  onExportJson,
+  onImportJson,
+  onExportMarkdown,
+  onResetProgress,
+  importStatus,
 }: {
   setActiveTab: (tab: string) => void;
+  onStartDomainDrill: (focus: ExamFocusFilter) => void;
   readinessScore: number;
   masteredCount: number;
+  completedDaysCount: number;
   averageQuiz: number;
-  attempts: number;
-  focusDomains: Array<{ id: number; title: string; gap: number }>;
+  attemptsCount: number;
+  domainStats: DomainStat[];
+  onExportJson: () => void;
+  onImportJson: (file: File) => void;
+  onExportMarkdown: () => void;
+  onResetProgress: () => void;
+  importStatus: string;
 }) {
+  const [confirmReset, setConfirmReset] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scaled = estimateCisaScaledScore(averageQuiz);
+  const rankedDomains = useMemo(
+    () => [...domainStats].sort((a, b) => b.gap - a.gap),
+    [domainStats],
+  );
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header>
-        <h2 className="text-3xl font-bold text-white">Pass-plan Dashboard</h2>
-        <p className="text-slate-400 mt-1">Use readiness metrics and weighted gaps to focus on what moves your score fastest.</p>
+    <div className="space-y-8">
+      <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">01 / Telemetry · CISA 5-Domain Blueprint</p>
+          <h2 className="text-3xl font-bold text-white mt-1">Pass-Plan Dashboard</h2>
+          <p className="text-slate-400 mt-1 max-w-2xl">
+            Prioritize exam prep using official ISACA domain weights, persisted mastery telemetry, and targeted weak-domain drills.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => onStartDomainDrill('weak')}
+            className="min-h-[44px] px-4 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-semibold text-sm hover:bg-emerald-400 transition-colors inline-flex items-center gap-2"
+          >
+            <Zap className="w-4 h-4" aria-hidden="true" />
+            Drill Weak Domains
+          </button>
+          <button
+            onClick={() => onStartDomainDrill('all')}
+            className="min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 font-medium text-sm hover:bg-slate-800 transition-colors inline-flex items-center gap-2"
+          >
+            <Award className="w-4 h-4 text-emerald-400" aria-hidden="true" />
+            Weighted Exam
+          </button>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <MetricCard icon={<Target className="w-7 h-7" />} label="Readiness" value={`${readinessScore}%`} tone="emerald" />
-        <MetricCard icon={<BrainCircuit className="w-7 h-7" />} label="Cards Mastered" value={`${masteredCount}/${FLASHCARDS.length}`} tone="sky" />
-        <MetricCard icon={<Award className="w-7 h-7" />} label="Avg Quiz" value={`${averageQuiz}%`} tone="amber" />
-        <MetricCard icon={<TrendingUp className="w-7 h-7" />} label="Quiz Attempts" value={`${attempts}`} tone="violet" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          icon={<Target className="w-6 h-6" />}
+          label="Readiness Index"
+          value={`${readinessScore}%`}
+          sublabel={`${attemptsCount} exam attempt${attemptsCount === 1 ? '' : 's'}`}
+          tone="emerald"
+        />
+        <MetricCard
+          icon={<Award className="w-6 h-6" />}
+          label="Est. CISA Scale"
+          value={attemptsCount > 0 ? `${scaled.scaled}/800` : '—'}
+          sublabel={attemptsCount > 0 ? `${scaled.band} (Pass ≥ 450)` : 'Complete 1 quiz to calibrate'}
+          tone="amber"
+        />
+        <MetricCard
+          icon={<BrainCircuit className="w-6 h-6" />}
+          label="Cards Mastered"
+          value={`${masteredCount}/${FLASHCARDS.length}`}
+          sublabel={`${Math.round((masteredCount / FLASHCARDS.length) * 100)}% deck retention`}
+          tone="sky"
+        />
+        <MetricCard
+          icon={<TrendingUp className="w-6 h-6" />}
+          label="30-Day Plan"
+          value={`${completedDaysCount}/30`}
+          sublabel={`${Math.round((completedDaysCount / 30) * 100)}% blueprint covered`}
+          tone="violet"
+        />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <section className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-white">Weighted Domain Gaps</h3>
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-6">
+            <div>
+              <h3 className="text-xl font-bold text-white">Weighted Domain Gaps</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Sorted by exam weight × remaining error rate</p>
+            </div>
             <button
-              onClick={() => setActiveTab('quiz')}
-              className="text-sm text-emerald-300 hover:text-emerald-200 font-medium flex items-center gap-1"
+              onClick={() => onStartDomainDrill('weak')}
+              className="min-h-[44px] px-3 rounded-lg text-sm text-emerald-300 hover:bg-slate-800 font-medium inline-flex items-center gap-1 transition-colors"
             >
-              Run timed practice <ChevronRight className="w-4 h-4" />
+              Launch weak-domain drill <ChevronRight className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
-          <div className="space-y-5">
-            {focusDomains.map((domain) => (
-              <div key={domain.id}>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-slate-300 font-medium">Domain {domain.id}: {domain.title}</span>
-                  <span className="text-rose-300">Gap {domain.gap}%</span>
+          <div className="space-y-4">
+            {rankedDomains.map((domain) => (
+              <div key={domain.id} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                  <div className="min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="text-slate-100 font-semibold text-sm">
+                      D{domain.id}: {domain.title}
+                    </span>
+                    <span className="font-mono text-xs text-slate-400 whitespace-nowrap">({domain.weight}% weight)</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="font-mono text-xs text-slate-300 whitespace-nowrap">
+                      {domain.total > 0 ? `${domain.accuracy}% acc` : 'Untested'}
+                    </span>
+                    <span className="font-mono text-xs text-rose-300 whitespace-nowrap">Gap {domain.gap}%</span>
+                    <button
+                      onClick={() => onStartDomainDrill(domain.id as ExamFocusFilter)}
+                      className="min-h-[36px] px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-medium text-emerald-300 hover:bg-slate-700 transition-colors whitespace-nowrap"
+                    >
+                      Drill D{domain.id}
+                    </button>
+                  </div>
                 </div>
                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-rose-400 rounded-full" style={{ width: `${domain.gap}%` }} />
+                  <div
+                    className={`h-full rounded-full transition-all ${domain.accuracy >= 75 ? 'bg-emerald-400' : domain.accuracy >= 50 ? 'bg-amber-400' : 'bg-rose-400'}`}
+                    style={{ width: `${Math.max(4, domain.total > 0 ? domain.accuracy : domain.gap)}%` }}
+                  />
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <h3 className="text-xl font-bold text-white mb-4">7-Day Sprint</h3>
-          <ul className="space-y-3 text-sm text-slate-300">
-            <li className="bg-slate-800/60 rounded-lg p-3">Day 1-2: 40 flashcards on your weakest domain, then 10 mixed quiz questions.</li>
-            <li className="bg-slate-800/60 rounded-lg p-3">Day 3-4: Review wrong quiz items and rewrite “why each distractor is wrong.”</li>
-            <li className="bg-slate-800/60 rounded-lg p-3">Day 5: Full timed simulator in one session.</li>
-            <li className="bg-slate-800/60 rounded-lg p-3">Day 6: Domain 4 and 5 continuity + security reinforcement.</li>
-            <li className="bg-slate-800/60 rounded-lg p-3">Day 7: Light recall and formula refresh (RTO/RPO/MTD, sampling, RACI).</li>
-          </ul>
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between gap-5">
+          <div>
+            <h3 className="text-xl font-bold text-white mb-4">7-Day Final Sprint</h3>
+            <ul className="space-y-3 text-sm text-slate-300">
+              <li className="bg-slate-800/60 rounded-lg p-3">Day 1-2: 40 flashcards on your weakest domain, then 10 mixed quiz questions.</li>
+              <li className="bg-slate-800/60 rounded-lg p-3">Day 3-4: Review wrong quiz items and rewrite “why each distractor is wrong.”</li>
+              <li className="bg-slate-800/60 rounded-lg p-3">Day 5: Full weighted simulator in Exam Mode under timed pressure.</li>
+              <li className="bg-slate-800/60 rounded-lg p-3">Day 6: Domain 4 &amp; 5 continuity + security reinforcement (50% of exam).</li>
+              <li className="bg-slate-800/60 rounded-lg p-3">Day 7: Light recall and formula refresh (MTD = RTO + WRT, RACI, sampling).</li>
+            </ul>
+          </div>
+          <div className="border-t border-slate-800 pt-4 text-xs text-slate-400 flex items-center gap-2">
+            <Keyboard className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
+            <span>Pro tip: Use keys <kbd>1</kbd>–<kbd>4</kbd> &amp; <kbd>Enter</kbd> in Simulator, <kbd>Space</kbd> in Flashcards.</span>
+          </div>
         </section>
       </div>
 
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 no-print">
+        <div>
+          <h3 className="text-base font-bold text-white">Local-First Progress &amp; Study Sheet Export</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Your progress persists automatically in this browser. Export a JSON backup or a Markdown weak-area study sheet anytime.
+          </p>
+          {importStatus && <p className="text-xs text-emerald-300 mt-1">{importStatus}</p>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={onExportMarkdown}
+            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/25 text-xs font-medium inline-flex items-center gap-2 transition-colors"
+          >
+            <FileText className="w-4 h-4" aria-hidden="true" />
+            Weak-Area Notes (.md)
+          </button>
+          <button
+            onClick={onExportJson}
+            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 text-xs font-medium inline-flex items-center gap-2 transition-colors"
+          >
+            <Download className="w-4 h-4" aria-hidden="true" />
+            Export JSON
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onImportJson(file);
+              e.target.value = '';
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 text-xs font-medium inline-flex items-center gap-2 transition-colors"
+          >
+            <Upload className="w-4 h-4" aria-hidden="true" />
+            Import JSON
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 text-xs font-medium inline-flex items-center gap-2 transition-colors"
+          >
+            <Printer className="w-4 h-4" aria-hidden="true" />
+            Print
+          </button>
+          {!confirmReset ? (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-rose-300 hover:border-rose-500/40 text-xs font-medium inline-flex items-center gap-2 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" aria-hidden="true" />
+              Reset
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                onResetProgress();
+                setConfirmReset(false);
+              }}
+              onBlur={() => setConfirmReset(false)}
+              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-200 text-xs font-semibold inline-flex items-center gap-2"
+            >
+              Confirm Wipe
+            </button>
+          )}
+        </div>
+      </section>
+
       <div className="grid md:grid-cols-2 gap-6">
         <ActionCard
-          title="Knowledge Drills"
-          description="Study domain traps, memory anchors, and high-yield terms before practice tests."
+          title="Knowledge Base & Traps"
+          description="Study ISACA exam focus rules, common distractor traps, memory anchors, and searchable GRC terminology."
           actionLabel="Open Knowledge Base"
           onClick={() => setActiveTab('knowledge')}
           tone="slate"
         />
         <ActionCard
           title="Adaptive Flashcards"
-          description="Use domain filters and review queue to improve retention where you are weak."
+          description="Drill by domain or Review Queue with Spacebar flip and rapid mastery hotkeys."
           actionLabel="Start Flashcards"
           onClick={() => setActiveTab('flashcards')}
           tone="emerald"
@@ -956,21 +1029,40 @@ function Dashboard({
   );
 }
 
-function MetricCard({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: 'emerald' | 'sky' | 'amber' | 'violet' }) {
+function MetricCard({
+  icon,
+  label,
+  value,
+  sublabel,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sublabel: string;
+  tone: 'emerald' | 'sky' | 'amber' | 'violet';
+}) {
   const toneClass = {
-    emerald: 'from-emerald-500/20 to-emerald-400/5 text-emerald-300 border-emerald-500/20',
-    sky: 'from-sky-500/20 to-sky-400/5 text-sky-300 border-sky-500/20',
-    amber: 'from-amber-500/20 to-amber-400/5 text-amber-300 border-amber-500/20',
-    violet: 'from-violet-500/20 to-violet-400/5 text-violet-300 border-violet-500/20',
+    emerald: 'border-emerald-500/25 bg-slate-900',
+    sky: 'border-sky-500/25 bg-slate-900',
+    amber: 'border-amber-500/25 bg-slate-900',
+    violet: 'border-violet-500/25 bg-slate-900',
+  };
+  const iconTone = {
+    emerald: 'text-emerald-400 bg-emerald-500/15',
+    sky: 'text-sky-400 bg-sky-500/15',
+    amber: 'text-amber-400 bg-amber-500/15',
+    violet: 'text-violet-400 bg-violet-500/15',
   };
 
   return (
-    <div className={`bg-gradient-to-br ${toneClass[tone]} border rounded-2xl p-5`}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-slate-100">{icon}</div>
+    <div className={`${toneClass[tone]} border rounded-2xl p-5`}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="font-mono text-xs uppercase tracking-wider text-slate-400">{label}</p>
+        <div className={`p-2 rounded-lg ${iconTone[tone]}`} aria-hidden="true">{icon}</div>
       </div>
-      <p className="text-sm text-slate-300">{label}</p>
-      <p className="text-2xl font-bold text-white mt-1">{value}</p>
+      <p className="text-2xl font-bold text-white">{value}</p>
+      <p className="text-xs text-slate-400 mt-1">{sublabel}</p>
     </div>
   );
 }
@@ -979,16 +1071,16 @@ function ActionCard({ title, description, actionLabel, onClick, tone }: { title:
   return (
     <button
       onClick={onClick}
-      className={`text-left rounded-2xl p-6 border transition-all hover:-translate-y-0.5 ${
+      className={`text-left rounded-2xl p-6 border transition-colors ${
         tone === 'emerald'
           ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15'
-          : 'bg-slate-900 border-slate-800 hover:bg-slate-900/80'
+          : 'bg-slate-900 border-slate-800 hover:bg-slate-800/80'
       }`}
     >
       <h3 className="text-xl text-white font-bold mb-2">{title}</h3>
-      <p className="text-slate-300 mb-5">{description}</p>
-      <span className="text-emerald-300 font-medium inline-flex items-center gap-2">
-        {actionLabel} <ChevronRight className="w-4 h-4" />
+      <p className="text-slate-300 text-sm mb-5 leading-relaxed">{description}</p>
+      <span className="text-emerald-300 font-medium text-sm inline-flex items-center gap-2">
+        {actionLabel} <ChevronRight className="w-4 h-4" aria-hidden="true" />
       </span>
     </button>
   );
@@ -1117,27 +1209,27 @@ function FlashcardTrainer({
 }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [domainFilter, setDomainFilter] = useState<number | 'all'>('all');
+  const [domainFilter, setDomainFilter] = useState<number | 'all' | 'review'>('all');
 
   const deck = useMemo(() => {
     if (domainFilter === 'all') return FLASHCARDS;
+    if (domainFilter === 'review') return FLASHCARDS.filter((card) => reviewQueue.has(card.id));
     return FLASHCARDS.filter((card) => card.domain === domainFilter);
-  }, [domainFilter]);
+  }, [domainFilter, reviewQueue]);
 
   const safeIndex = Math.min(currentIdx, Math.max(deck.length - 1, 0));
   const card = deck[safeIndex];
-
   const masteryPct = Math.round((mastered.size / FLASHCARDS.length) * 100);
 
-  const next = () => {
+  const next = useCallback(() => {
     setIsFlipped(false);
     setCurrentIdx((prev) => (deck.length === 0 ? 0 : (prev + 1) % deck.length));
-  };
+  }, [deck.length]);
 
-  const previous = () => {
+  const previous = useCallback(() => {
     setIsFlipped(false);
     setCurrentIdx((prev) => (deck.length === 0 ? 0 : (prev - 1 + deck.length) % deck.length));
-  };
+  }, [deck.length]);
 
   const shuffleDeck = () => {
     if (deck.length <= 1) return;
@@ -1145,7 +1237,7 @@ function FlashcardTrainer({
     setIsFlipped(false);
   };
 
-  const markMastered = () => {
+  const markMastered = useCallback(() => {
     if (!card) return;
     setMastered((prev) => new Set(prev).add(card.id));
     setReviewQueue((prev) => {
@@ -1154,9 +1246,9 @@ function FlashcardTrainer({
       return nextSet;
     });
     next();
-  };
+  }, [card, next, setMastered, setReviewQueue]);
 
-  const markReview = () => {
+  const markReview = useCallback(() => {
     if (!card) return;
     setReviewQueue((prev) => new Set(prev).add(card.id));
     setMastered((prev) => {
@@ -1165,122 +1257,253 @@ function FlashcardTrainer({
       return nextSet;
     });
     next();
-  };
+  }, [card, next, setMastered, setReviewQueue]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (event.code === 'Space') {
+        event.preventDefault();
+        setIsFlipped((prev) => !prev);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        next();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        previous();
+      } else if (event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        markMastered();
+      } else if (event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        markReview();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [markMastered, markReview, next, previous]);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-7 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="text-center">
-        <h2 className="text-3xl font-bold text-white">Adaptive Flashcards</h2>
-        <p className="text-slate-400 mt-2">Filter by domain, mark confidence, and build a focused review queue.</p>
+    <div className="max-w-4xl mx-auto space-y-6">
+      <header>
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">Active Recall · Spaced Queue</p>
+        <h2 className="text-3xl font-bold text-white mt-1">Adaptive Flashcards</h2>
+        <p className="text-slate-400 mt-1">Filter by domain or Review Queue, flip with <kbd>Space</kbd>, and grade confidence rapidly.</p>
       </header>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Mastery</p>
+          <p className="font-mono text-[11px] text-slate-400 uppercase tracking-wider">Mastery</p>
           <p className="text-2xl font-bold text-white mt-1">{masteryPct}%</p>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Review Queue</p>
-          <p className="text-2xl font-bold text-white mt-1">{reviewQueue.size}</p>
+          <p className="font-mono text-[11px] text-slate-400 uppercase tracking-wider">Review Queue</p>
+          <p className="text-2xl font-bold text-amber-300 mt-1">{reviewQueue.size}</p>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Current Deck</p>
-          <p className="text-2xl font-bold text-white mt-1">{deck.length}</p>
+          <p className="font-mono text-[11px] text-slate-400 uppercase tracking-wider">Card</p>
+          <p className="text-2xl font-bold text-white mt-1">{deck.length > 0 ? `${safeIndex + 1}/${deck.length}` : '0/0'}</p>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
         <div className="flex items-center gap-2 text-slate-300 text-sm">
-          <Filter className="w-4 h-4" />
-          <span>Domain filter</span>
+          <Filter className="w-4 h-4 text-emerald-400" aria-hidden="true" />
+          <span>Deck filter</span>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <select
+            aria-label="Filter flashcards by domain or review queue"
             value={domainFilter}
             onChange={(e) => {
-              const value = e.target.value === 'all' ? 'all' : Number(e.target.value);
+              const raw = e.target.value;
+              const value = raw === 'all' || raw === 'review' ? raw : Number(raw);
               setDomainFilter(value);
               setCurrentIdx(0);
               setIsFlipped(false);
             }}
-            className="bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-sm w-full sm:w-auto"
+            className="min-h-[44px] bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-3 py-2 text-sm flex-1 sm:w-auto"
           >
-            <option value="all">All domains</option>
+            <option value="all">All domains ({FLASHCARDS.length})</option>
+            <option value="review">Review Queue Only ({reviewQueue.size})</option>
             {DOMAINS.map((domain) => (
               <option key={domain.id} value={domain.id}>
-                Domain {domain.id}
+                Domain {domain.id}: {domain.title}
               </option>
             ))}
           </select>
-          <button onClick={shuffleDeck} className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800">
-            <Shuffle className="w-4 h-4" />
+          <button
+            onClick={shuffleDeck}
+            aria-label="Jump to random flashcard"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 transition-colors"
+          >
+            <Shuffle className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       </div>
 
       {card ? (
         <>
-          <div className="w-full aspect-[16/10] [perspective:1100px]">
+          <div className="w-full min-h-[260px] sm:min-h-[310px] [perspective:1100px]">
             <motion.div
-              className="w-full h-full relative [transform-style:preserve-3d] cursor-pointer"
+              role="button"
+              tabIndex={0}
+              aria-label={isFlipped ? 'Flashcard answer side. Press Space or Enter to flip back.' : `Flashcard prompt: ${card.front}. Press Space or Enter to reveal definition.`}
+              className="w-full min-h-[260px] sm:min-h-[310px] relative [transform-style:preserve-3d] cursor-pointer rounded-2xl"
               animate={{ rotateY: isFlipped ? 180 : 0 }}
-              transition={{ duration: 0.55, type: 'spring', stiffness: 220, damping: 20 }}
+              transition={{ duration: 0.45, type: 'spring', stiffness: 240, damping: 24 }}
               onClick={() => setIsFlipped((prev) => !prev)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.code === 'Space') {
+                  e.preventDefault();
+                  setIsFlipped((prev) => !prev);
+                }
+              }}
             >
-              <div className="absolute w-full h-full [backface-visibility:hidden] bg-slate-900 border border-slate-700 rounded-2xl p-8 flex flex-col justify-between">
-                <div className="flex justify-between text-xs uppercase tracking-wide">
+              <div className="absolute inset-0 [backface-visibility:hidden] bg-slate-900 border border-slate-700 rounded-2xl p-6 sm:p-8 flex flex-col justify-between">
+                <div className="flex justify-between font-mono text-xs uppercase tracking-wider">
                   <span className="text-emerald-300">Domain {card.domain}</span>
-                  {mastered.has(card.id) ? <span className="text-emerald-300">Mastered</span> : <span className="text-slate-500">Prompt</span>}
+                  {mastered.has(card.id) ? (
+                    <span className="text-emerald-300">Mastered</span>
+                  ) : reviewQueue.has(card.id) ? (
+                    <span className="text-amber-300">In Review Queue</span>
+                  ) : (
+                    <span className="text-slate-400">Prompt</span>
+                  )}
                 </div>
-                <h3 className="text-3xl md:text-4xl font-bold text-white text-center">{card.front}</h3>
-                <p className="text-center text-slate-500 text-sm">Click to flip</p>
+                <h3 className="text-2xl sm:text-4xl font-bold text-white text-center px-2">{card.front}</h3>
+                <p className="text-center text-slate-400 text-xs">Click card or press <kbd>Space</kbd> to flip</p>
               </div>
-              <div className="absolute w-full h-full [backface-visibility:hidden] [transform:rotateY(180deg)] bg-slate-800 border border-slate-700 rounded-2xl p-8 flex flex-col justify-between">
-                <span className="text-xs uppercase tracking-wide text-slate-400">Definition</span>
-                <p className="text-xl text-slate-100 leading-relaxed">{card.back}</p>
-                <p className="text-slate-500 text-sm">Click to return</p>
+              <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-slate-800 border border-emerald-500/40 rounded-2xl p-6 sm:p-8 flex flex-col justify-between">
+                <span className="font-mono text-xs uppercase tracking-wider text-emerald-300">Definition · Domain {card.domain}</span>
+                <p className="text-lg sm:text-xl text-slate-100 leading-relaxed">{card.back}</p>
+                <p className="text-slate-400 text-xs">Press <kbd>M</kbd> Mastered · <kbd>R</kbd> Review · <kbd>Space</kbd> Return</p>
               </div>
             </motion.div>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-3 justify-between">
-            <div className="flex gap-3">
-              <button onClick={previous} className="px-4 py-2 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800">
-                Previous
+          <div className="flex flex-col sm:flex-row gap-3 justify-between">
+            <div className="flex gap-2">
+              <button onClick={previous} className="min-h-[44px] flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 text-sm font-medium">
+                Previous <kbd className="ml-1 hidden sm:inline-flex">←</kbd>
               </button>
-              <button onClick={next} className="px-4 py-2 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800">
-                Next
+              <button onClick={next} className="min-h-[44px] flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 text-sm font-medium">
+                Next <kbd className="ml-1 hidden sm:inline-flex">→</kbd>
               </button>
             </div>
-            <div className="flex gap-3">
-              <button onClick={markReview} className="flex items-center gap-2 px-5 py-3 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 hover:bg-amber-500/30">
-                <XSquare className="w-4 h-4" /> Needs Review
+            <div className="flex gap-2">
+              <button onClick={markReview} className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 hover:bg-amber-500/25 text-sm font-medium">
+                <XSquare className="w-4 h-4" aria-hidden="true" /> Needs Review <kbd className="hidden sm:inline-flex">R</kbd>
               </button>
-              <button onClick={markMastered} className="flex items-center gap-2 px-5 py-3 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/30">
-                <CheckSquare className="w-4 h-4" /> Mastered
+              <button onClick={markMastered} className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/25 text-sm font-medium">
+                <CheckSquare className="w-4 h-4" aria-hidden="true" /> Mastered <kbd className="hidden sm:inline-flex">M</kbd>
               </button>
             </div>
           </div>
         </>
       ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-400">No cards in this filter.</div>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-3">
+          <p className="text-slate-300">No cards in this filter yet.</p>
+          {domainFilter === 'review' && (
+            <button
+              onClick={() => setDomainFilter('all')}
+              className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-sm font-medium"
+            >
+              Show All Domains
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => void }) {
-  const QUESTION_COUNT_OPTIONS = [10, 30, 50, 75, 100];
-  const [questionCount, setQuestionCount] = useState<number>(30);
+function ExamSimulator({
+  onComplete,
+  weakDomainIds,
+  initialFocus,
+  onClearInitialFocus,
+  onExportMarkdown,
+}: {
+  onComplete: (attempt: QuizAttempt) => void;
+  weakDomainIds: number[];
+  initialFocus: ExamFocusFilter | null;
+  onClearInitialFocus: () => void;
+  onExportMarkdown: () => void;
+}) {
+  const QUESTION_COUNT_OPTIONS = [10, 20, 30, 50, 75, 100];
+  const [questionCount, setQuestionCount] = useState<number>(20);
+  const [focusFilter, setFocusFilter] = useState<ExamFocusFilter>('all');
+  const [practiceMode, setPracticeMode] = useState<'exam' | 'study'>('study');
   const [timingMode, setTimingMode] = useState<'standard' | 'perQuestion'>('standard');
   const [secondsPerQuestion, setSecondsPerQuestion] = useState<number>(90);
   const [examQuestions, setExamQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<Array<number | null>>([]);
+  const [flagged, setFlagged] = useState<Set<number>>(new Set());
   const [started, setStarted] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [perQuestionRemaining, setPerQuestionRemaining] = useState(secondsPerQuestion);
+
+  const startExamWith = useCallback(
+    (overrideFocus?: ExamFocusFilter, overrideCount?: number) => {
+      const activeFocus = overrideFocus ?? focusFilter;
+      const requestedCount = overrideCount ?? questionCount;
+      const set = buildWeightedExamSet(QUESTION_BANK, requestedCount, activeFocus, weakDomainIds);
+      setFocusFilter(activeFocus);
+      setExamQuestions(set);
+      setAnswers(set.map(() => null));
+      setFlagged(new Set());
+      setCurrentQuestion(0);
+      setTimeElapsed(0);
+      setShowResults(false);
+      setStarted(true);
+      setPerQuestionRemaining(secondsPerQuestion);
+    },
+    [focusFilter, questionCount, secondsPerQuestion, weakDomainIds],
+  );
+
+  useEffect(() => {
+    if (initialFocus !== null) {
+      setFocusFilter(initialFocus);
+      startExamWith(initialFocus, initialFocus === 'all' ? 30 : 15);
+      onClearInitialFocus();
+    }
+  }, [initialFocus, onClearInitialFocus, startExamWith]);
+
+  const score = useMemo(() => {
+    return examQuestions.reduce((acc, q, idx) => acc + (answers[idx] === q.answer ? 1 : 0), 0);
+  }, [answers, examQuestions]);
+
+  const finishExam = useCallback(() => {
+    if (examQuestions.length === 0) return;
+    const perDomain: QuizAttempt['perDomain'] = {};
+    const missedIds: number[] = [];
+    examQuestions.forEach((q, idx) => {
+      const base = perDomain[q.domain] ?? { correct: 0, total: 0 };
+      base.total += 1;
+      if (answers[idx] === q.answer) {
+        base.correct += 1;
+      } else {
+        missedIds.push(q.id);
+      }
+      perDomain[q.domain] = base;
+    });
+
+    onComplete({
+      score,
+      total: examQuestions.length,
+      durationSeconds: timeElapsed,
+      completedAt: new Date().toISOString(),
+      perDomain,
+      missedIds,
+      mode: practiceMode,
+      filter: String(focusFilter),
+    });
+    setShowResults(true);
+  }, [answers, examQuestions, focusFilter, onComplete, practiceMode, score, timeElapsed]);
 
   useEffect(() => {
     if (!started || showResults) return;
@@ -1300,7 +1523,7 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
     }
     const timer = window.setTimeout(() => setPerQuestionRemaining((prev) => prev - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [started, showResults, timingMode, perQuestionRemaining, currentQuestion, examQuestions.length]);
+  }, [started, showResults, timingMode, perQuestionRemaining, currentQuestion, examQuestions.length, finishExam]);
 
   useEffect(() => {
     if (started && timingMode === 'perQuestion') {
@@ -1308,110 +1531,189 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
     }
   }, [currentQuestion, started, timingMode, secondsPerQuestion]);
 
-  const startExam = () => {
-    const set = buildExamSet(questionCount);
-    setExamQuestions(set);
-    setAnswers(set.map(() => null));
-    setCurrentQuestion(0);
-    setTimeElapsed(0);
-    setShowResults(false);
-    setStarted(true);
-    setPerQuestionRemaining(secondsPerQuestion);
-  };
+  const answeredCount = answers.filter((a) => a !== null).length;
+
+  // Keyboard shortcuts during active exam: 1-4 select option, Enter/Right next, Left prev, F flag
+  useEffect(() => {
+    if (!started || showResults || examQuestions.length === 0) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const q = examQuestions[currentQuestion];
+      if (!q) return;
+
+      if (['1', '2', '3', '4'].includes(event.key)) {
+        const optionIdx = Number(event.key) - 1;
+        if (optionIdx < q.options.length) {
+          event.preventDefault();
+          setAnswers((prev) => {
+            const next = [...prev];
+            next[currentQuestion] = optionIdx;
+            return next;
+          });
+        }
+      } else if (event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        setFlagged((prev) => {
+          const next = new Set(prev);
+          if (next.has(currentQuestion)) next.delete(currentQuestion);
+          else next.add(currentQuestion);
+          return next;
+        });
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setCurrentQuestion((prev) => Math.max(prev - 1, 0));
+      } else if (event.key === 'ArrowRight' || event.key === 'Enter') {
+        event.preventDefault();
+        if (currentQuestion < examQuestions.length - 1) {
+          setCurrentQuestion((prev) => prev + 1);
+        } else if (answeredCount > 0) {
+          finishExam();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [answeredCount, currentQuestion, examQuestions, finishExam, showResults, started]);
 
   const selected = answers[currentQuestion];
-  const answeredCount = answers.filter((a) => a !== null).length;
   const progress = examQuestions.length === 0 ? 0 : Math.round((answeredCount / examQuestions.length) * 100);
-
-  const score = useMemo(() => {
-    return examQuestions.reduce((acc, q, idx) => acc + (answers[idx] === q.answer ? 1 : 0), 0);
-  }, [answers, examQuestions]);
-
-  const finishExam = () => {
-    if (examQuestions.length === 0) return;
-    const perDomain: QuizAttempt['perDomain'] = {};
-    examQuestions.forEach((q, idx) => {
-      const base = perDomain[q.domain] ?? { correct: 0, total: 0 };
-      base.total += 1;
-      if (answers[idx] === q.answer) base.correct += 1;
-      perDomain[q.domain] = base;
-    });
-
-    onComplete({
-      score,
-      total: examQuestions.length,
-      durationSeconds: timeElapsed,
-      completedAt: new Date().toISOString(),
-      perDomain,
-    });
-    setShowResults(true);
-  };
-
-  const restart = () => {
-    startExam();
-  };
 
   const backToSetup = () => {
     setStarted(false);
     setShowResults(false);
     setExamQuestions([]);
     setAnswers([]);
+    setFlagged(new Set());
     setCurrentQuestion(0);
     setTimeElapsed(0);
   };
 
   if (!started) {
+    const availableCount =
+      typeof focusFilter === 'number'
+        ? QUESTION_BANK.filter((q) => q.domain === focusFilter).length
+        : QUESTION_BANK.length;
+
     return (
-      <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="max-w-4xl mx-auto space-y-6">
         <header>
-          <h2 className="text-3xl font-bold text-white">Mature Exam Simulator</h2>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">ISACA Weighted Simulation</p>
+          <h2 className="text-3xl font-bold text-white mt-1">CISA Exam Simulator</h2>
           <p className="text-slate-400 mt-1">
-            Choose question volume and timing model. Every attempt pulls a newly randomized set and order.
+            Configure domain scope, instant rationale vs. blind exam mode, and keyboard-driven pacing (<kbd>1</kbd>–<kbd>4</kbd>, <kbd>Enter</kbd>, <kbd>F</kbd>).
           </p>
         </header>
 
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
           <div>
-            <p className="text-sm text-slate-300 mb-2">Question count</p>
+            <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-2">Domain Scope</p>
             <div className="flex flex-wrap gap-2">
-              {QUESTION_COUNT_OPTIONS.map((count) => (
+              <button
+                onClick={() => setFocusFilter('all')}
+                className={`min-h-[44px] px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                  focusFilter === 'all'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                All Domains (CISA Weighted)
+              </button>
+              <button
+                onClick={() => setFocusFilter('weak')}
+                className={`min-h-[44px] px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                  focusFilter === 'weak'
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                    : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                Weak Domains Drill (D{weakDomainIds.join(', D')})
+              </button>
+              {DOMAINS.map((d) => (
                 <button
-                  key={count}
-                  onClick={() => setQuestionCount(count)}
-                  className={`px-4 py-2 rounded-lg border text-sm ${
-                    questionCount === count
-                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
-                      : 'bg-slate-950 border-slate-700 text-slate-300'
+                  key={d.id}
+                  onClick={() => setFocusFilter(d.id as ExamFocusFilter)}
+                  className={`min-h-[44px] px-3.5 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                    focusFilter === d.id
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
                   }`}
                 >
-                  {count} Questions
+                  D{d.id} ({d.weight}%)
                 </button>
               ))}
             </div>
           </div>
 
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-2">Question Volume</p>
+              <div className="flex flex-wrap gap-2">
+                {QUESTION_COUNT_OPTIONS.map((count) => (
+                  <button
+                    key={count}
+                    onClick={() => setQuestionCount(count)}
+                    className={`min-h-[44px] px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                      questionCount === count
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                        : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    {Math.min(count, availableCount)} Q
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-2">Feedback Mode</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setPracticeMode('study')}
+                  className={`min-h-[44px] px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                    practiceMode === 'study'
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  Study Mode (Instant Rationale)
+                </button>
+                <button
+                  onClick={() => setPracticeMode('exam')}
+                  className={`min-h-[44px] px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                    practiceMode === 'exam'
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  Exam Mode (Blind)
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div>
-            <p className="text-sm text-slate-300 mb-2">Timing mode</p>
+            <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-2">Timing Mode</p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setTimingMode('standard')}
-                className={`px-4 py-2 rounded-lg border text-sm ${
+                className={`min-h-[44px] px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
                   timingMode === 'standard'
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
-                    : 'bg-slate-950 border-slate-700 text-slate-300'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                Standard Timer
+                Standard Elapsed Timer
               </button>
               <button
                 onClick={() => setTimingMode('perQuestion')}
-                className={`px-4 py-2 rounded-lg border text-sm ${
+                className={`min-h-[44px] px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
                   timingMode === 'perQuestion'
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
-                    : 'bg-slate-950 border-slate-700 text-slate-300'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-950 border-slate-700 text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                Per-Question Timer
+                Per-Question Countdown
               </button>
             </div>
           </div>
@@ -1420,10 +1722,11 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
             <div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-slate-300">Seconds per question</span>
-                <span className="text-slate-100 font-semibold">{secondsPerQuestion}s</span>
+                <span className="font-mono text-slate-100 font-semibold">{secondsPerQuestion}s</span>
               </div>
               <input
                 type="range"
+                aria-label="Seconds per question"
                 min={30}
                 max={180}
                 step={15}
@@ -1434,17 +1737,18 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
             </div>
           )}
 
-          <div className="bg-slate-800/70 rounded-lg p-4 text-sm text-slate-300">
-            <p>Question bank size: <span className="text-slate-100 font-semibold">{QUESTION_BANK.length}</span></p>
-            <p className="mt-1">Questions are designed to be answerable from this course content or standard CISA/GRC references.</p>
+          <div className="bg-slate-800/60 border border-slate-700/70 rounded-xl p-4 text-sm text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <p>Active pool: <span className="text-white font-semibold">{availableCount} questions</span> · Bank total: {QUESTION_BANK.length}</p>
+              <p className="text-xs text-slate-400 mt-0.5">Options are Fisher-Yates shuffled on every attempt to eliminate position bias.</p>
+            </div>
+            <button
+              onClick={() => startExamWith()}
+              className="min-h-[48px] px-6 py-3 rounded-xl bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-semibold transition-colors shrink-0"
+            >
+              Start Practice Exam
+            </button>
           </div>
-
-          <button
-            onClick={startExam}
-            className="w-full md:w-auto px-6 py-3 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 font-semibold"
-          >
-            Start Practice Exam
-          </button>
         </section>
       </div>
     );
@@ -1452,6 +1756,7 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
 
   if (showResults) {
     const percent = examQuestions.length === 0 ? 0 : Math.round((score / examQuestions.length) * 100);
+    const scaled = estimateCisaScaledScore(percent);
     const weakDomains = DOMAINS.map((domain) => {
       const inDomain = examQuestions.filter((q) => q.domain === domain.id);
       const correct = inDomain.reduce((acc, q) => {
@@ -1459,25 +1764,46 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
         return acc + (answers[idx] === q.answer ? 1 : 0);
       }, 0);
       const domainScore = inDomain.length === 0 ? 0 : Math.round((correct / inDomain.length) * 100);
-      return { id: domain.id, title: domain.title, score: domainScore };
-    }).filter((item) => item.score > 0 || examQuestions.some((q) => q.domain === item.id)).sort((a, b) => a.score - b.score);
+      return { id: domain.id, title: domain.title, score: domainScore, count: inDomain.length };
+    })
+      .filter((item) => item.count > 0)
+      .sort((a, b) => a.score - b.score);
 
     return (
-      <div className="max-w-4xl mx-auto space-y-6 animate-in zoom-in-95 duration-500">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
-          <div className="w-20 h-20 rounded-full mx-auto mb-5 flex items-center justify-center bg-emerald-500/20 text-emerald-300">
-            <Award className="w-9 h-9" />
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 text-center">
+          <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-emerald-500/20 text-emerald-300">
+            <Award className="w-8 h-8" aria-hidden="true" />
           </div>
-          <h3 className="text-3xl font-black text-white mb-2">Simulation Complete</h3>
-          <p className="text-slate-400">You finished in {formatTime(timeElapsed)}</p>
-          <p className="text-slate-500 text-sm mt-1">{examQuestions.length} questions · {timingMode === 'perQuestion' ? `${secondsPerQuestion}s/question mode` : 'standard timer mode'}</p>
-          <p className="text-6xl font-black text-white mt-5">{percent}%</p>
-          <p className="text-slate-400">{score} / {examQuestions.length} correct</p>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">
+            {scaled.passing ? 'Estimated Passing Band' : 'Below Pass Threshold'}
+          </p>
+          <h3 className="text-3xl font-bold text-white mt-1">Simulation Complete</h3>
+          <p className="text-slate-400 text-sm mt-1">
+            {examQuestions.length} questions in {formatTime(timeElapsed)} · {practiceMode === 'study' ? 'Study Mode' : 'Exam Mode'}
+          </p>
+
+          <div className="mt-6 grid grid-cols-2 max-w-md mx-auto gap-4">
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+              <p className="font-mono text-xs text-slate-400 uppercase">Raw Score</p>
+              <p className="text-4xl font-bold text-white mt-1">{percent}%</p>
+              <p className="text-xs text-slate-400 mt-1">{score} / {examQuestions.length} correct</p>
+            </div>
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+              <p className="font-mono text-xs text-slate-400 uppercase">Est. CISA Scale</p>
+              <p className={`text-4xl font-bold mt-1 ${scaled.passing ? 'text-emerald-300' : 'text-amber-300'}`}>{scaled.scaled}</p>
+              <p className="text-xs text-slate-400 mt-1">{scaled.band} (Pass ≥ 450)</p>
+            </div>
+          </div>
+
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <button onClick={restart} className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700">
-              <RefreshCw className="w-4 h-4" /> New Random Exam
+            <button onClick={() => startExamWith()} className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors">
+              <RefreshCw className="w-4 h-4" aria-hidden="true" /> New Shuffled Exam
             </button>
-            <button onClick={backToSetup} className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800">
+            <button onClick={onExportMarkdown} className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 text-sm font-medium">
+              <FileText className="w-4 h-4" aria-hidden="true" /> Export Weak-Area Notes
+            </button>
+            <button onClick={backToSetup} className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-medium">
               Adjust Settings
             </button>
           </div>
@@ -1485,18 +1811,26 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
 
         <div className="grid lg:grid-cols-2 gap-5">
           <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-            <h4 className="text-xl font-bold text-white mb-4">Weak Domain Priority</h4>
+            <h4 className="text-xl font-bold text-white mb-4">Domain Breakdown</h4>
             <div className="space-y-3">
               {weakDomains.map((domain) => (
-                <div key={domain.id} className="bg-slate-800/70 rounded-lg p-3">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-300">Domain {domain.id}</span>
-                    <span className="text-slate-200">{domain.score}%</span>
+                <div key={domain.id} className="bg-slate-800/70 rounded-xl p-3.5">
+                  <div className="flex items-center justify-between text-sm mb-2 gap-2">
+                    <span className="text-slate-200 font-medium">Domain {domain.id} ({domain.count} Q)</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-slate-100">{domain.score}%</span>
+                      <button
+                        onClick={() => startExamWith(domain.id as ExamFocusFilter, 10)}
+                        className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs text-emerald-300 hover:bg-slate-800"
+                      >
+                        Drill
+                      </button>
+                    </div>
                   </div>
                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-400" style={{ width: `${domain.score}%` }} />
+                    <div className={`h-full ${domain.score >= 70 ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${domain.score}%` }} />
                   </div>
-                  <p className="text-xs text-slate-500 mt-2">{domain.title}</p>
+                  <p className="text-xs text-slate-400 mt-2">{domain.title}</p>
                 </div>
               ))}
             </div>
@@ -1508,20 +1842,20 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
               {examQuestions.map((q, idx) => {
                 if (answers[idx] === q.answer) return null;
                 return (
-                  <details key={q.id} className="bg-slate-800/70 rounded-lg p-3 group">
-                    <summary className="cursor-pointer text-sm text-slate-200 font-medium list-none flex justify-between items-center">
+                  <details key={q.id} className="bg-slate-800/70 rounded-xl p-3.5 group" open={examQuestions.length - score <= 3}>
+                    <summary className="cursor-pointer text-sm text-slate-100 font-medium list-none flex justify-between items-center">
                       <span>Q{idx + 1} · Domain {q.domain}</span>
-                      <ChevronDown className="w-4 h-4 text-slate-500 group-open:rotate-180 transition-transform" />
+                      <ChevronDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" aria-hidden="true" />
                     </summary>
-                    <p className="mt-3 text-sm text-slate-300">{q.question}</p>
+                    <p className="mt-3 text-sm text-slate-200">{q.question}</p>
                     <p className="mt-2 text-xs text-rose-300">Your answer: {answers[idx] === null ? 'No answer' : q.options[answers[idx]!]}</p>
-                    <p className="text-xs text-emerald-300">Correct answer: {q.options[q.answer]}</p>
-                    <p className="mt-2 text-xs text-slate-400">{q.explanation}</p>
+                    <p className="text-xs text-emerald-300 mt-1">Correct answer: {q.options[q.answer]}</p>
+                    <p className="mt-2 text-xs text-slate-300 leading-relaxed">{q.explanation}</p>
                   </details>
                 );
               })}
               {score === examQuestions.length && (
-                <p className="text-slate-300 text-sm">No missed questions. Keep this pace and increase timed difficulty.</p>
+                <p className="text-emerald-300 text-sm">Perfect score. Increase volume or switch to Per-Question Exam Mode.</p>
               )}
             </div>
           </section>
@@ -1531,88 +1865,185 @@ function ExamSimulator({ onComplete }: { onComplete: (attempt: QuizAttempt) => v
   }
 
   const q = examQuestions[currentQuestion];
+  const isFlagged = flagged.has(currentQuestion);
+  const showInstantFeedback = practiceMode === 'study' && selected !== null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header>
-        <h2 className="text-3xl font-bold text-white">Timed Exam Simulator</h2>
-        <p className="text-slate-400 mt-1">
-          {timingMode === 'perQuestion'
-            ? 'Per-question timer mode is active. Unanswered questions auto-advance when time expires.'
-            : 'Standard timer mode is active. Answer all questions then review weak domains and distractor logic.'}
-        </p>
+    <div className="max-w-4xl mx-auto space-y-5">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">
+            {practiceMode === 'study' ? 'Study Mode · Instant Rationale' : 'Exam Mode · Blind Simulation'}
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-white">Timed Exam Simulator</h2>
+        </div>
+        <button
+          onClick={backToSetup}
+          className="min-h-[44px] self-start px-3.5 py-2 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 text-xs font-medium"
+        >
+          Exit to Setup
+        </button>
       </header>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase text-slate-500 tracking-wide">Progress</p>
-          <p className="text-sm text-slate-300">Question {currentQuestion + 1} of {examQuestions.length} · {answeredCount} answered</p>
-          <div className="h-2 bg-slate-800 rounded-full overflow-hidden mt-2 w-52">
-            <div className="h-full bg-emerald-400" style={{ width: `${progress}%` }} />
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+        <div className="flex-1">
+          <p className="font-mono text-xs uppercase text-slate-400">
+            Question {currentQuestion + 1} / {examQuestions.length} · {answeredCount} answered · {flagged.size} flagged
+          </p>
+          <div className="h-2 bg-slate-800 rounded-full overflow-hidden mt-2 max-w-sm">
+            <div className="h-full bg-emerald-400 transition-all" style={{ width: `${progress}%` }} />
           </div>
         </div>
-        <div className="flex flex-col items-start md:items-end gap-1">
-          <div className="text-slate-300 text-sm flex items-center gap-2"><Clock className="w-4 h-4" /> {formatTime(timeElapsed)}</div>
+        <div className="flex items-center gap-4">
+          <div className="font-mono text-slate-200 text-sm flex items-center gap-2">
+            <Clock className="w-4 h-4 text-emerald-400" aria-hidden="true" /> {formatTime(timeElapsed)}
+          </div>
           {timingMode === 'perQuestion' && (
-            <div className={`text-sm ${perQuestionRemaining <= 15 ? 'text-rose-300' : 'text-slate-300'}`}>
-              Per-question: {formatTime(perQuestionRemaining)}
+            <div className={`font-mono text-sm font-semibold ${perQuestionRemaining <= 15 ? 'text-rose-300' : 'text-amber-300'}`}>
+              {formatTime(perQuestionRemaining)} left
             </div>
           )}
         </div>
       </div>
 
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
-        <p className="text-xs uppercase text-emerald-300 tracking-wide mb-2">Domain {q.domain}</p>
-        <h3 className="text-xl md:text-2xl font-semibold text-white mb-6 leading-relaxed">{q.question}</h3>
-        <div className="space-y-3">
-          {q.options.map((option, index) => (
-            <button
-              key={index}
-              onClick={() => {
-                const next = [...answers];
-                next[currentQuestion] = index;
-                setAnswers(next);
-              }}
-              className={`w-full text-left px-5 py-4 rounded-xl border transition-all ${
-                selected === index
-                  ? 'bg-emerald-500/15 border-emerald-400 text-emerald-100'
-                  : 'bg-slate-800/60 border-slate-700 text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              {option}
-            </button>
-          ))}
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-8">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <p className="font-mono text-xs uppercase text-emerald-300 tracking-wider">
+            Domain {q.domain} · {domainById(q.domain).title}
+          </p>
+          <button
+            onClick={() =>
+              setFlagged((prev) => {
+                const next = new Set(prev);
+                if (next.has(currentQuestion)) next.delete(currentQuestion);
+                else next.add(currentQuestion);
+                return next;
+              })
+            }
+            aria-pressed={isFlagged}
+            className={`min-h-[38px] px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition-colors ${
+              isFlagged
+                ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                : 'bg-slate-950 border-slate-700 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Flag className="w-3.5 h-3.5" aria-hidden="true" />
+            {isFlagged ? 'Flagged' : 'Flag'} <kbd className="hidden sm:inline-flex">F</kbd>
+          </button>
         </div>
+
+        <h3 className="text-lg sm:text-2xl font-semibold text-white mb-6 leading-relaxed">{q.question}</h3>
+
+        <div className="space-y-3">
+          {q.options.map((option, index) => {
+            const isSelected = selected === index;
+            const isCorrect = index === q.answer;
+            let stateClasses = 'bg-slate-800/60 border-slate-700 text-slate-200 hover:bg-slate-800';
+            if (showInstantFeedback) {
+              if (isCorrect) stateClasses = 'bg-emerald-500/20 border-emerald-400 text-emerald-100';
+              else if (isSelected && !isCorrect) stateClasses = 'bg-rose-500/20 border-rose-400 text-rose-100';
+            } else if (isSelected) {
+              stateClasses = 'bg-emerald-500/15 border-emerald-400 text-emerald-100';
+            }
+
+            return (
+              <button
+                key={index}
+                onClick={() => {
+                  const next = [...answers];
+                  next[currentQuestion] = index;
+                  setAnswers(next);
+                }}
+                className={`w-full min-h-[52px] text-left px-4 py-3.5 rounded-xl border transition-colors flex items-start gap-3 ${stateClasses}`}
+              >
+                <kbd className="mt-0.5 shrink-0">{index + 1}</kbd>
+                <span className="text-sm sm:text-base leading-relaxed">{option}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {showInstantFeedback && (
+          <div
+            className={`mt-5 rounded-xl p-4 border text-sm ${
+              selected === q.answer
+                ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-100'
+                : 'bg-amber-500/10 border-amber-500/35 text-amber-100'
+            }`}
+          >
+            <p className="font-semibold mb-1">{selected === q.answer ? 'Correct.' : 'Review Rationale:'}</p>
+            <p className="text-slate-200 leading-relaxed">{q.explanation}</p>
+          </div>
+        )}
       </section>
 
-      <div className="flex flex-col sm:flex-row gap-3 justify-between">
+      <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
         <button
           onClick={() => setCurrentQuestion((prev) => Math.max(prev - 1, 0))}
           disabled={currentQuestion === 0}
-          className="px-5 py-3 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 disabled:opacity-50"
+          className="min-h-[44px] px-5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 disabled:opacity-40 hover:bg-slate-800 text-sm font-medium"
         >
-          Previous
+          Previous <kbd className="ml-1 hidden sm:inline-flex">←</kbd>
         </button>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           {currentQuestion < examQuestions.length - 1 ? (
             <button
               onClick={() => setCurrentQuestion((prev) => Math.min(prev + 1, examQuestions.length - 1))}
-              className="px-5 py-3 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-200"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 text-sm transition-colors"
             >
-              Next Question
+              Next Question <kbd className="ml-1 hidden sm:inline-flex">Enter</kbd>
             </button>
           ) : (
             <button
               onClick={finishExam}
               disabled={answeredCount === 0}
-              className="px-5 py-3 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 disabled:opacity-50"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 disabled:opacity-40 text-sm transition-colors"
             >
-              Finish and Score
+              Finish &amp; Score
+            </button>
+          )}
+          {currentQuestion < examQuestions.length - 1 && answeredCount > 0 && (
+            <button
+              onClick={finishExam}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-medium"
+            >
+              Submit Early
             </button>
           )}
         </div>
       </div>
+
+      {examQuestions.length <= 50 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+          <p className="font-mono text-[11px] uppercase tracking-wider text-slate-400 mb-2">Question Navigator</p>
+          <div className="flex flex-wrap gap-1.5">
+            {examQuestions.map((item, idx) => {
+              const isAnswered = answers[idx] !== null;
+              const isCurrent = idx === currentQuestion;
+              const itemFlagged = flagged.has(idx);
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setCurrentQuestion(idx)}
+                  aria-label={`Jump to question ${idx + 1}${itemFlagged ? ' (flagged)' : ''}`}
+                  className={`min-w-[36px] min-h-[36px] px-2 rounded-lg font-mono text-xs border transition-colors ${
+                    isCurrent
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                      : itemFlagged
+                        ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                        : isAnswered
+                          ? 'bg-slate-800 border-emerald-500/40 text-emerald-200'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {idx + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1624,10 +2055,11 @@ function GrcTools() {
   const [examDate, setExamDate] = useState('');
   const [hoursPerWeek, setHoursPerWeek] = useState(8);
 
-  const inherentRisk = impact * likelihood;
-  const residualRisk = Math.max(1, Math.round((inherentRisk * (6 - controlMaturity)) / 5));
-
-  const riskPriority = residualRisk >= 12 ? 'High' : residualRisk >= 7 ? 'Medium' : 'Low';
+  const { inherentRisk, residualRisk, priority: riskPriority } = calculateResidualRisk(
+    impact,
+    likelihood,
+    controlMaturity,
+  );
 
   const daysToExam = useMemo(() => {
     if (!examDate) return null;
@@ -1747,12 +2179,15 @@ function GrcTools() {
 function ThirtyDayPlan({
   completedDays,
   setCompletedDays,
+  blockCompletion,
+  setBlockCompletion,
 }: {
   completedDays: Set<number>;
   setCompletedDays: React.Dispatch<React.SetStateAction<Set<number>>>;
+  blockCompletion: Record<number, boolean[]>;
+  setBlockCompletion: React.Dispatch<React.SetStateAction<Record<number, boolean[]>>>;
 }) {
   const [selectedDay, setSelectedDay] = useState(1);
-  const [blockCompletion, setBlockCompletion] = useState<Record<number, boolean[]>>({});
   const selectedPlan = THIRTY_DAY_PLAN.find((item) => item.day === selectedDay) ?? THIRTY_DAY_PLAN[0];
   const completedCount = completedDays.size;
   const completionPct = Math.round((completedCount / THIRTY_DAY_PLAN.length) * 100);
@@ -1795,26 +2230,27 @@ function ThirtyDayPlan({
   const domainLabel = selectedPlan.domain === 0 ? 'Mixed Domains' : `Domain ${selectedPlan.domain}: ${domainById(selectedPlan.domain).title}`;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-6xl mx-auto space-y-8">
       <header>
-        <h2 className="text-3xl font-bold text-white">30-Day CISA Master Plan</h2>
-        <p className="text-slate-400 mt-1">Complete one focused module per day to cover the full exam blueprint with structured repetition.</p>
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">Structured Curriculum · 30 Modules</p>
+        <h2 className="text-3xl font-bold text-white mt-1">30-Day CISA Master Plan</h2>
+        <p className="text-slate-400 mt-1">Complete one focused 60-minute module per day. Every block and day completion saves automatically.</p>
       </header>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid sm:grid-cols-3 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Completed Days</p>
+          <p className="font-mono text-xs text-slate-400 uppercase tracking-wider">Completed Days</p>
           <p className="text-2xl font-bold text-white mt-1">{completedCount} / 30</p>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Progress</p>
+          <p className="font-mono text-xs text-slate-400 uppercase tracking-wider">Progress</p>
           <p className="text-2xl font-bold text-white mt-1">{completionPct}%</p>
           <div className="h-2 bg-slate-800 rounded-full mt-2 overflow-hidden">
             <div className="h-full bg-emerald-400" style={{ width: `${completionPct}%` }} />
           </div>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Days Remaining</p>
+          <p className="font-mono text-xs text-slate-400 uppercase tracking-wider">Days Remaining</p>
           <p className="text-2xl font-bold text-white mt-1">{daysLeft}</p>
         </div>
       </div>
@@ -1828,11 +2264,12 @@ function ThirtyDayPlan({
               <button
                 key={item.day}
                 onClick={() => setSelectedDay(item.day)}
-                className={`rounded-lg px-2 py-2 text-sm border transition-colors ${
+                aria-pressed={selectedDay === item.day}
+                className={`min-h-[44px] rounded-lg px-2 py-2 text-sm font-mono border transition-colors ${
                   selectedDay === item.day
-                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold'
                     : done
-                      ? 'bg-slate-800 border-slate-700 text-slate-200'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -1846,31 +2283,31 @@ function ThirtyDayPlan({
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-wide text-emerald-300">Day {selectedPlan.day}</p>
+            <p className="font-mono text-xs uppercase tracking-wider text-emerald-300">Day {selectedPlan.day}</p>
             <h3 className="text-2xl font-bold text-white">{selectedPlan.title}</h3>
             <p className="text-sm text-slate-400 mt-1">{domainLabel}</p>
           </div>
           <button
             onClick={() => toggleDay(selectedPlan.day)}
             disabled={!canMarkDayComplete && !completedDays.has(selectedPlan.day)}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border ${
+            className={`min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
               completedDays.has(selectedPlan.day)
                 ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
-                : 'bg-slate-950 border-slate-700 text-slate-300 attention-btn-strong'
-            } disabled:opacity-60 disabled:cursor-not-allowed`}
+                : 'bg-slate-950 border-slate-700 text-slate-200 hover:bg-slate-800'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            {completedDays.has(selectedPlan.day) ? <CheckCircle className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
-            {completedDays.has(selectedPlan.day) ? 'Completed' : 'Mark Complete'}
+            {completedDays.has(selectedPlan.day) ? <CheckCircle className="w-4 h-4" aria-hidden="true" /> : <CheckSquare className="w-4 h-4" aria-hidden="true" />}
+            {completedDays.has(selectedPlan.day) ? 'Completed' : 'Mark Day Complete'}
           </button>
         </div>
 
-        <div className="bg-slate-800/70 rounded-lg p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Objective</p>
-          <p className="text-slate-200">{selectedPlan.objective}</p>
+        <div className="bg-slate-800/70 rounded-xl p-4">
+          <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-1.5">Objective</p>
+          <p className="text-slate-200 text-sm leading-relaxed">{selectedPlan.objective}</p>
         </div>
 
-        <div className="bg-slate-800/70 rounded-lg p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Daily Drills</p>
+        <div className="bg-slate-800/70 rounded-xl p-4">
+          <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-2">Daily Drills</p>
           <ul className="space-y-2 text-sm text-slate-200">
             {selectedPlan.drills.map((drill) => (
               <li key={drill} className="flex gap-2">
@@ -1881,40 +2318,44 @@ function ThirtyDayPlan({
           </ul>
         </div>
 
-        <div className="bg-slate-800/70 rounded-lg p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Checkpoint</p>
-          <p className="text-slate-200">{selectedPlan.checkpoint}</p>
+        <div className="bg-slate-800/70 rounded-xl p-4">
+          <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-1.5">Checkpoint</p>
+          <p className="text-slate-200 text-sm leading-relaxed">{selectedPlan.checkpoint}</p>
         </div>
 
-        <div className="bg-slate-800/70 rounded-lg p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Real-World Example</p>
-          <p className="text-slate-200">{dayContext.realWorldExample}</p>
+        <div className="bg-slate-800/70 rounded-xl p-4">
+          <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-1.5">Real-World Example</p>
+          <p className="text-slate-200 text-sm leading-relaxed">{dayContext.realWorldExample}</p>
         </div>
 
-        <div className="bg-slate-800/70 rounded-lg p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Deep Instructional Explanation</p>
-          <p className="text-slate-200">{dayContext.deepExplanation}</p>
+        <div className="bg-slate-800/70 rounded-xl p-4">
+          <p className="font-mono text-xs uppercase tracking-wider text-slate-400 mb-1.5">Deep Instructional Explanation</p>
+          <p className="text-slate-200 text-sm leading-relaxed">{dayContext.deepExplanation}</p>
         </div>
       </section>
 
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <h3 className="text-xl font-bold text-white">60-Minute Learning Material</h3>
-          <p className="text-sm text-slate-400">{minutesDone} / 60 minutes completed</p>
+          <p className="font-mono text-sm text-slate-400">{minutesDone} / 60 minutes completed</p>
         </div>
         <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-          <div className="h-full bg-emerald-400" style={{ width: `${(minutesDone / 60) * 100}%` }} />
+          <div className="h-full bg-emerald-400 transition-all" style={{ width: `${(minutesDone / 60) * 100}%` }} />
         </div>
 
         <div className="grid md:grid-cols-2 gap-4">
-          <div className="bg-slate-800/70 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
+          <div className="bg-slate-800/70 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
               <p className="text-sm font-semibold text-white">Block 1 · 15 min · Core Teaching</p>
               <button
                 onClick={() => toggleBlock(selectedPlan.day, 0)}
-                className={`text-xs px-2 py-1 rounded bg-slate-700 text-slate-200 ${!completedBlocks[0] ? 'attention-btn-strong' : 'button-ack'}`}
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  completedBlocks[0]
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-700'
+                }`}
               >
-                {completedBlocks[0] ? 'Done' : 'Mark'}
+                {completedBlocks[0] ? 'Done' : 'Mark Done'}
               </button>
             </div>
             <ul className="space-y-2 text-sm text-slate-200">
@@ -1924,14 +2365,18 @@ function ThirtyDayPlan({
             </ul>
           </div>
 
-          <div className="bg-slate-800/70 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
+          <div className="bg-slate-800/70 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
               <p className="text-sm font-semibold text-white">Block 2 · 15 min · Guided Practice</p>
               <button
                 onClick={() => toggleBlock(selectedPlan.day, 1)}
-                className={`text-xs px-2 py-1 rounded bg-slate-700 text-slate-200 ${!completedBlocks[1] ? 'attention-btn-strong' : 'button-ack'}`}
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  completedBlocks[1]
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-700'
+                }`}
               >
-                {completedBlocks[1] ? 'Done' : 'Mark'}
+                {completedBlocks[1] ? 'Done' : 'Mark Done'}
               </button>
             </div>
             <ul className="space-y-2 text-sm text-slate-200">
@@ -1941,28 +2386,36 @@ function ThirtyDayPlan({
             </ul>
           </div>
 
-          <div className="bg-slate-800/70 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
+          <div className="bg-slate-800/70 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
               <p className="text-sm font-semibold text-white">Block 3 · 15 min · Scenario Lab</p>
               <button
                 onClick={() => toggleBlock(selectedPlan.day, 2)}
-                className={`text-xs px-2 py-1 rounded bg-slate-700 text-slate-200 ${!completedBlocks[2] ? 'attention-btn-strong' : 'button-ack'}`}
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  completedBlocks[2]
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-700'
+                }`}
               >
-                {completedBlocks[2] ? 'Done' : 'Mark'}
+                {completedBlocks[2] ? 'Done' : 'Mark Done'}
               </button>
             </div>
             <p className="text-sm text-slate-200 mb-3"><span className="font-semibold text-slate-100">Scenario:</span> {learningPack.scenarioPrompt}</p>
             <p className="text-sm text-emerald-200"><span className="font-semibold">Best-answer logic:</span> {learningPack.scenarioAnswer}</p>
           </div>
 
-          <div className="bg-slate-800/70 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
+          <div className="bg-slate-800/70 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
               <p className="text-sm font-semibold text-white">Block 4 · 15 min · Knowledge Check</p>
               <button
                 onClick={() => toggleBlock(selectedPlan.day, 3)}
-                className={`text-xs px-2 py-1 rounded bg-slate-700 text-slate-200 ${!completedBlocks[3] ? 'attention-btn-strong' : 'button-ack'}`}
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  completedBlocks[3]
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-700'
+                }`}
               >
-                {completedBlocks[3] ? 'Done' : 'Mark'}
+                {completedBlocks[3] ? 'Done' : 'Mark Done'}
               </button>
             </div>
             <ul className="space-y-2 text-sm text-slate-200">
@@ -1975,7 +2428,7 @@ function ThirtyDayPlan({
 
         {!canMarkDayComplete && !completedDays.has(selectedPlan.day) && (
           <p className="text-xs text-amber-300">
-            Complete all four 15-minute blocks before marking this day complete.
+            Complete all four 15-minute blocks above to unlock “Mark Day Complete.”
           </p>
         )}
       </section>
@@ -1983,8 +2436,8 @@ function ThirtyDayPlan({
       {completedCount === THIRTY_DAY_PLAN.length && (
         <section className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6">
           <h3 className="text-xl font-bold text-emerald-200 mb-2">30-Day Plan Complete</h3>
-          <p className="text-emerald-100/90">
-            You have finished all 30 modules and covered all core CISA domains with mixed review and full mock practice. Keep rotating quiz + flashcards to maintain retention until exam day.
+          <p className="text-emerald-100/90 text-sm">
+            You have finished all 30 modules and covered all core CISA domains with mixed review and full mock practice. Keep rotating timed simulations and flashcards until exam day.
           </p>
         </section>
       )}
@@ -2286,18 +2739,124 @@ function SliderRow({
   );
 }
 
+function PortalFooter() {
+  const [copiedSol, setCopiedSol] = useState(false);
+
+  const copySolana = async () => {
+    try {
+      await navigator.clipboard.writeText(SOLANA_TIP_ADDRESS);
+      setCopiedSol(true);
+      window.setTimeout(() => setCopiedSol(false), 2000);
+    } catch {
+      setCopiedSol(false);
+    }
+  };
+
+  return (
+    <footer className="mt-14 pt-6 border-t border-slate-800 text-xs text-slate-400 space-y-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <p className="text-slate-300 font-medium">
+            Engineered by Neal Frazier Tech (
+            <a
+              href="https://github.com/1nc0gn30/cisa-grc-study-portal"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-300 hover:underline"
+            >
+              @1nc0gn30
+            </a>
+            ) •{' '}
+            <a
+              href="https://nullai.tech"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-300 hover:underline"
+            >
+              NullAI Platform
+            </a>
+          </p>
+          <p className="text-slate-500">
+            100% free, open-access study utility. Progress stays locally in your browser.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={STRIPE_COFFEE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-200 hover:bg-amber-500/25 font-medium transition-colors"
+          >
+            <Coffee className="w-4 h-4" aria-hidden="true" />
+            Buy Us a Coffee
+            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+          </a>
+
+          <div className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 border border-slate-800 px-3 min-h-[44px]">
+            <a
+              href={`solana:${SOLANA_TIP_ADDRESS}`}
+              className="font-mono text-[11px] text-slate-300 hover:text-emerald-300 transition-colors"
+              title={`Solana Tip Address: ${SOLANA_TIP_ADDRESS}`}
+            >
+              SOL: {SOLANA_TIP_ADDRESS.slice(0, 6)}…{SOLANA_TIP_ADDRESS.slice(-4)}
+            </a>
+            <button
+              type="button"
+              onClick={copySolana}
+              aria-label="Copy Solana tip wallet address"
+              className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              {copiedSol ? <Check className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
+            </button>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function downloadTextFile(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function App() {
+  const initialProgress = useMemo(() => loadStudyProgress(), []);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === 'undefined') return 'dark';
     const storedTheme = localStorage.getItem('theme_mode') as ThemeMode | null;
-    return storedTheme ?? 'dark';
+    return storedTheme === 'light' ? 'light' : 'dark';
   });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [mastered, setMastered] = useState<Set<number>>(new Set());
-  const [reviewQueue, setReviewQueue] = useState<Set<number>>(new Set());
-  const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
-  const [completedDays, setCompletedDays] = useState<Set<number>>(new Set());
+  const [mastered, setMastered] = useState<Set<number>>(() => new Set(initialProgress.masteredIds));
+  const [reviewQueue, setReviewQueue] = useState<Set<number>>(() => new Set(initialProgress.reviewQueueIds));
+  const [attempts, setAttempts] = useState<QuizAttempt[]>(() => initialProgress.attempts);
+  const [completedDays, setCompletedDays] = useState<Set<number>>(() => new Set(initialProgress.completedDays));
+  const [blockCompletion, setBlockCompletion] = useState<Record<number, boolean[]>>(() => initialProgress.blockCompletion);
+  const [pendingExamFocus, setPendingExamFocus] = useState<ExamFocusFilter | null>(null);
+  const [importStatus, setImportStatus] = useState('');
+
+  // Auto-persist study state to localStorage on every update
+  useEffect(() => {
+    saveStudyProgress({
+      version: 1,
+      masteredIds: Array.from(mastered),
+      reviewQueueIds: Array.from(reviewQueue),
+      attempts,
+      completedDays: Array.from(completedDays),
+      blockCompletion,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [mastered, reviewQueue, attempts, completedDays, blockCompletion]);
 
   const averageQuiz = useMemo(() => {
     if (attempts.length === 0) return 0;
@@ -2305,60 +2864,98 @@ export default function App() {
     return Math.round(pct);
   }, [attempts]);
 
-  const domainAccuracy = useMemo(() => {
-    const aggregate: Record<number, { correct: number; total: number }> = {};
-    attempts.forEach((attempt) => {
-      Object.entries(attempt.perDomain).forEach(([id, stats]) => {
-        const domainId = Number(id);
-        const base = aggregate[domainId] ?? { correct: 0, total: 0 };
-        base.correct += stats.correct;
-        base.total += stats.total;
-        aggregate[domainId] = base;
-      });
-    });
+  const domainStats = useMemo(() => computeDomainStats(attempts), [attempts]);
+  const weakDomainIds = useMemo(() => getWeakDomainIds(domainStats, 2), [domainStats]);
+  const scaledEstimate = useMemo(() => estimateCisaScaledScore(averageQuiz), [averageQuiz]);
 
-    return DOMAINS.map((domain) => {
-      const stats = aggregate[domain.id];
-      const accuracy = !stats || stats.total === 0 ? 0 : Math.round((stats.correct / stats.total) * 100);
-      return { id: domain.id, title: domain.title, accuracy, weight: domain.weight };
-    });
-  }, [attempts]);
-
-  const focusDomains = useMemo(() => {
-    return domainAccuracy
-      .map((domain) => {
-        const weightedNeed = Math.round((domain.weight / 100) * (100 - domain.accuracy));
-        return { id: domain.id, title: domain.title, gap: weightedNeed };
-      })
-      .sort((a, b) => b.gap - a.gap)
-      .slice(0, 4);
-  }, [domainAccuracy]);
-
-  const readinessScore = useMemo(() => {
-    const masteryPct = (mastered.size / FLASHCARDS.length) * 100;
-    const consistencyPct = Math.min(100, attempts.length * 20);
-    const score = masteryPct * 0.45 + averageQuiz * 0.45 + consistencyPct * 0.1;
-    return Math.round(score);
-  }, [mastered.size, averageQuiz, attempts.length]);
+  const readinessScore = useMemo(
+    () =>
+      computeReadinessIndex({
+        masteredCount: mastered.size,
+        totalCards: FLASHCARDS.length,
+        averageQuiz,
+        attemptCount: attempts.length,
+        completedDaysCount: completedDays.size,
+        totalDays: THIRTY_DAY_PLAN.length,
+      }),
+    [mastered.size, averageQuiz, attempts.length, completedDays.size],
+  );
 
   useEffect(() => {
     localStorage.setItem('theme_mode', theme);
     document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
-  useEffect(() => {
-    const onDocumentClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      const button = target.closest('button');
-      if (!button) return;
-      button.classList.add('button-ack');
-    };
-    document.addEventListener('click', onDocumentClick, true);
-    return () => document.removeEventListener('click', onDocumentClick, true);
-  }, []);
-
   const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+
+  const handleStartDomainDrill = (focus: ExamFocusFilter) => {
+    setPendingExamFocus(focus);
+    setActiveTab('quiz');
+  };
+
+  const handleExportJson = () => {
+    const payload = {
+      version: 1,
+      masteredIds: Array.from(mastered),
+      reviewQueueIds: Array.from(reviewQueue),
+      attempts,
+      completedDays: Array.from(completedDays),
+      blockCompletion,
+      updatedAt: new Date().toISOString(),
+    };
+    downloadTextFile(
+      `cisa-study-progress-${new Date().toISOString().slice(0, 10)}.json`,
+      JSON.stringify(payload, null, 2),
+      'application/json',
+    );
+    setImportStatus('Progress backup downloaded.');
+  };
+
+  const handleImportJson = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = parseStudyProgress(text);
+      setMastered(new Set(parsed.masteredIds));
+      setReviewQueue(new Set(parsed.reviewQueueIds));
+      setAttempts(parsed.attempts);
+      setCompletedDays(new Set(parsed.completedDays));
+      setBlockCompletion(parsed.blockCompletion);
+      setImportStatus(`Restored ${parsed.attempts.length} quiz attempts, ${parsed.masteredIds.length} cards, and ${parsed.completedDays.length} days.`);
+    } catch {
+      setImportStatus('Could not import file. Please choose a valid CISA progress JSON backup.');
+    }
+  };
+
+  const handleExportMarkdown = () => {
+    const recentMissedIds = new Set<number>();
+    attempts.slice(-3).forEach((a) => (a.missedIds ?? []).forEach((id) => recentMissedIds.add(id)));
+    const recentMissedQuestions = QUESTION_BANK.filter((q) => recentMissedIds.has(q.id));
+    const md = buildWeakAreaMarkdown({
+      readinessScore,
+      averageQuiz,
+      masteredCount: mastered.size,
+      totalCards: FLASHCARDS.length,
+      completedDaysCount: completedDays.size,
+      domainStats,
+      recentMissedQuestions,
+    });
+    downloadTextFile(
+      `cisa-weak-area-notes-${new Date().toISOString().slice(0, 10)}.md`,
+      md,
+      'text/markdown;charset=utf-8',
+    );
+    setImportStatus('Weak-area study sheet (.md) downloaded.');
+  };
+
+  const handleResetProgress = () => {
+    const empty = createEmptyProgress();
+    setMastered(new Set(empty.masteredIds));
+    setReviewQueue(new Set(empty.reviewQueueIds));
+    setAttempts(empty.attempts);
+    setCompletedDays(new Set(empty.completedDays));
+    setBlockCompletion(empty.blockCompletion);
+    setImportStatus('All local study progress has been reset.');
+  };
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 flex selection:bg-emerald-300 selection:text-slate-950 ${theme === 'light' ? 'theme-light' : 'theme-dark'}`}>
@@ -2368,47 +2965,66 @@ export default function App() {
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
         readinessScore={readinessScore}
+        scaledScore={attempts.length > 0 ? scaledEstimate.scaled : null}
         theme={theme}
         toggleTheme={toggleTheme}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        <header className="md:hidden bg-slate-950 border-b border-slate-800 text-white p-3 flex items-center justify-between sticky top-0 z-30">
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        <header className="md:hidden bg-slate-950/95 backdrop-blur border-b border-slate-800 text-white px-3 py-2 flex items-center justify-between sticky top-0 z-30">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className="flex items-center gap-2 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70"
+            className="min-h-[44px] flex items-center gap-2 text-left rounded-lg px-1"
             aria-label="Go to home dashboard"
           >
-            <ShieldCheck className="w-6 h-6 text-emerald-400" />
+            <ShieldCheck className="w-6 h-6 text-emerald-400" aria-hidden="true" />
             <span className="font-bold">CISA Pass Lab</span>
           </button>
           <div className="flex items-center gap-1">
             <button
               onClick={toggleTheme}
-              className="p-2 text-slate-300 hover:text-white"
-              aria-label="Toggle theme"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             >
-              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {theme === 'dark' ? <Sun className="w-5 h-5" aria-hidden="true" /> : <Moon className="w-5 h-5" aria-hidden="true" />}
             </button>
-            <button onClick={() => setIsMobileOpen(true)} className="p-2 -mr-2 text-slate-300 hover:text-white" aria-label="Open menu">
-              <Menu className="w-6 h-6" />
+            <button
+              onClick={() => setIsMobileOpen(true)}
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800"
+              aria-label="Open navigation menu"
+            >
+              <Menu className="w-6 h-6" aria-hidden="true" />
             </button>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 lg:p-10">
-          <div className="max-w-6xl mx-auto pb-24">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10">
+          <div className="max-w-6xl mx-auto pb-8">
             {activeTab === 'dashboard' && (
               <Dashboard
                 setActiveTab={setActiveTab}
+                onStartDomainDrill={handleStartDomainDrill}
                 readinessScore={readinessScore}
                 masteredCount={mastered.size}
+                completedDaysCount={completedDays.size}
                 averageQuiz={averageQuiz}
-                attempts={attempts.length}
-                focusDomains={focusDomains}
+                attemptsCount={attempts.length}
+                domainStats={domainStats}
+                onExportJson={handleExportJson}
+                onImportJson={handleImportJson}
+                onExportMarkdown={handleExportMarkdown}
+                onResetProgress={handleResetProgress}
+                importStatus={importStatus}
               />
             )}
-            {activeTab === 'thirtyday' && <ThirtyDayPlan completedDays={completedDays} setCompletedDays={setCompletedDays} />}
+            {activeTab === 'thirtyday' && (
+              <ThirtyDayPlan
+                completedDays={completedDays}
+                setCompletedDays={setCompletedDays}
+                blockCompletion={blockCompletion}
+                setBlockCompletion={setBlockCompletion}
+              />
+            )}
             {activeTab === 'knowledge' && <KnowledgeBase />}
             {activeTab === 'flashcards' && (
               <FlashcardTrainer
@@ -2418,9 +3034,18 @@ export default function App() {
                 setReviewQueue={setReviewQueue}
               />
             )}
-            {activeTab === 'quiz' && <ExamSimulator onComplete={(attempt) => setAttempts((prev) => [...prev, attempt])} />}
+            {activeTab === 'quiz' && (
+              <ExamSimulator
+                onComplete={(attempt) => setAttempts((prev) => [...prev, attempt])}
+                weakDomainIds={weakDomainIds}
+                initialFocus={pendingExamFocus}
+                onClearInitialFocus={() => setPendingExamFocus(null)}
+                onExportMarkdown={handleExportMarkdown}
+              />
+            )}
             {activeTab === 'tools' && <GrcTools />}
             {activeTab === 'ai' && <AiStudyAssistant />}
+            <PortalFooter />
           </div>
         </main>
       </div>

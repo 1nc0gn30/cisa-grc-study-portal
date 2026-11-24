@@ -3,32 +3,116 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CISA GRC Study Portal</title>
-    <meta name="description" content="An interactive study portal for CISA and GRC preparation with practice content and exam-focused guidance." />
-    <meta name="author" content="Neal Frazier" />
-    <meta name="robots" content="index, follow" />
-    <meta name="theme-color" content="#0b0f19" />
+    <title>CISA GRC Study Portal — Open-Access CISA Exam Simulator &amp; 30-Day Lab</title>
+    <meta
+      name="description"
+      content="Free, open-access CISA &amp; GRC exam prep workstation: weighted 5-domain exam simulator with keyboard shortcuts, adaptive flashcards, 30-day master plan, and residual risk calculator. Runs 100% locally in your browser."
+    />
+    <meta name="author" content="Neal Frazier (Neal Frazier Tech)" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="theme-color" content="#020617" />
     <link rel="canonical" href="https://cisa-grc-study-portal.nealfrazier.tech/" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="CISA GRC Study Portal" />
-    <meta property="og:title" content="CISA GRC Study Portal" />
-    <meta property="og:description" content="An interactive study portal for CISA and GRC preparation with practice content and exam-focused guidance." />
+    <meta property="og:title" content="CISA GRC Study Portal — Open-Access CISA Exam Simulator &amp; 30-Day Lab" />
+    <meta
+      property="og:description"
+      content="Free browser-based CISA and GRC exam preparation with weighted domain simulations, persistent mastery tracking, adaptive flashcards, and a 30-day study blueprint."
+    />
     <meta property="og:url" content="https://cisa-grc-study-portal.nealfrazier.tech/" />
-    <meta property="og:image" content="https://cisa-grc-study-portal.nealfrazier.tech/og-image.png?v=20260421" />
-    <meta property="og:image:alt" content="CISA GRC Study Portal preview image" />
+    <meta property="og:image" content="https://cisa-grc-study-portal.nealfrazier.tech/og-image.png?v=20261124" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="CISA GRC Study Portal interactive workstation preview" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="CISA GRC Study Portal" />
-    <meta name="twitter:description" content="An interactive study portal for CISA and GRC preparation with practice content and exam-focused guidance." />
-    <meta name="twitter:image" content="https://cisa-grc-study-portal.nealfrazier.tech/og-image.png?v=20260421" />
+    <meta name="twitter:site" content="@1nc0gn30" />
+    <meta name="twitter:creator" content="@1nc0gn30" />
+    <meta name="twitter:title" content="CISA GRC Study Portal — Open-Access CISA Exam Simulator" />
+    <meta
+      name="twitter:description"
+      content="Free, local-first CISA &amp; GRC exam prep with weighted domain drills, 200-800 scaled score estimation, adaptive flashcards, and 30-day plan."
+    />
+    <meta name="twitter:image" content="https://cisa-grc-study-portal.nealfrazier.tech/og-image.png?v=20261124" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "@id": "https://cisa-grc-study-portal.nealfrazier.tech/#app",
+            "name": "CISA GRC Study Portal",
+            "url": "https://cisa-grc-study-portal.nealfrazier.tech/",
+            "applicationCategory": "EducationalApplication",
+            "operatingSystem": "Any modern web browser",
+            "isAccessibleForFree": true,
+            "description": "An open-access CISA and GRC exam preparation workstation featuring weighted 5-domain practice exams, adaptive flashcards, a 30-day structured study plan, residual risk calculator, and local-first progress persistence.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "creator": {
+              "@type": "Organization",
+              "name": "Neal Frazier Tech",
+              "url": "https://nullai.tech",
+              "founder": {
+                "@type": "Person",
+                "name": "Neal Frazier",
+                "sameAs": "https://github.com/1nc0gn30"
+              }
+            },
+            "featureList": [
+              "Weighted 5-domain CISA exam simulator with standard and per-question timers",
+              "Weak-domain drill targeting and keyboard shortcuts (1-4, Enter, F)",
+              "Local-first mastery persistence and JSON/Markdown study note exports",
+              "Adaptive flashcards with review queue filtering",
+              "30-day CISA study master plan with 60-minute learning blocks",
+              "Residual risk calculator and exam study hour allocator"
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://cisa-grc-study-portal.nealfrazier.tech/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is the CISA GRC Study Portal completely free to use?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Every simulator mode, flashcard deck, 30-day study module, and GRC calculator is 100% free and unlocked with zero paywalls or account sign-ups. Optional community support is available via Buy Us a Coffee or Solana tips."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Where is my study progress and quiz history stored?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "All domain mastery metrics, quiz attempts, flashcards, and 30-day checkboxes are stored exclusively in your browser's localStorage. Nothing is transmitted to an external server unless you explicitly connect your own AI provider key in the optional AI Assistant tab."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How are CISA practice exam questions weighted?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The simulator supports official CISA domain weighting (Domain 1: 21%, Domain 2: 17%, Domain 3: 12%, Domain 4: 23%, Domain 5: 27%), plus Weak-Domain Drill and single-domain filters for focused remediation."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <form name="waitlist" method="POST" data-netlify="true" netlify-honeypot="bot-field" hidden>
-      <input type="hidden" name="form-name" value="waitlist" />
-      <input type="email" name="email" />
-      <input type="text" name="bot-field" />
-    </form>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
